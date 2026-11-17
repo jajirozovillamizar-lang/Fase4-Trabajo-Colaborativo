@@ -1,1 +1,46 @@
 #Desarrollo del Sistema Integral de Gestión de Clientes, Servicios y Reservas
+
+# Empezamos a crear las clases
+
+import abc
+
+
+# 1. Una clase abstracta que represente entidades generales del sistema
+
+class EntidadBase(abc.ABC):
+    def __init__(self, identificador):
+        self.identificador = identificador
+
+    @abc.abstractmethod
+    def obtener_informacion(self):
+        """Método abstracto obligatorio: 
+           Cualquier clase hija debe programar este método a su manera."""
+        pass
+
+
+
+# 2. clase Cliente con validaciones robustas y encapsulación de datos personales
+class Cliente(EntidadBase):  #hereda de EntidadBase
+    def __init__(self, cedula, nombre, correo):
+        super().__init__(cedula)  
+        # Atributos protegidos (encapsulación) para que no los cambien 
+        self.__nombre = nombre
+        self.__correo = correo
+
+    # @property sirve para poder LEER los datos de forma segura sin que se dañen
+    @property
+    def cedula(self):
+        return self.identificador  
+
+    @property
+    def nombre(self):
+        return self.__nombre
+
+    @property
+    def correo(self):
+        return self.__correo
+
+    # Se cumple con la obligación de la clase abstracta
+    def obtener_informacion(self):
+        return f"Cliente: {self.__nombre} | Cédula: {self.identificador} | Correo: {self.__correo}"
+   
