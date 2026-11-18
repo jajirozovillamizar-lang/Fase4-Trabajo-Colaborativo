@@ -280,3 +280,173 @@ class AsesoriaEspecializada(Servicio):
 
     def obtener_detalles(self):
         return f"Servicio: {self.nombre_servicio} | Código: {self.identificador} | Sesiones: {self.cantidad}"
+
+# =====================================================================
+# SECCIÓN 4. CLASE RESERVA
+# =====================================================================
+
+class Reserva:
+    """Une un cliente con un servicio y controla en qué estado va la reserva."""
+
+    def __init__(self, codigo, cliente, servicio):
+        if cliente is None:                                    # Sin cliente no hay reserva
+            raise ParametroFaltanteError("cliente")
+        if servicio is None:                                   # Sin servicio tampoco
+            raise ParametroFaltanteError("servicio")
+        self.__codigo = codigo                                 # Atributos privados
+        self.__cliente = cliente
+        self.__servicio = servicio
+        self.__estado = "Pendiente"                            # Toda reserva arranca pendiente
+        registrar_evento(f"Reserva {codigo} creada para {cliente.nombre} ({servicio.nombre_servicio}).")
+
+    @property
+    def codigo(self):
+        return self.__codigo
+
+    @property
+    def cliente(self):
+        return self.__cliente
+
+    @property
+    def servicio(self):
+        return self.__servicio
+
+    @property
+    def estado(self):
+        return self.__estado                                   # El estado solo cambia con los métodos
+
+    def confirmar(self):
+        if self.__estado != "Pendiente":                       # Solo se confirma lo que está pendiente
+            raise EstadoReservaError("confirmar", self.__estado)
+        if not self.__servicio.disponible:                     # El servicio tiene que estar disponible
+            raise ServicioNoDisponibleError(self.__servicio.nombre_servicio)
+        self.__estado = "Confirmada"
+        registrar_evento(f"Reserva {self.__codigo} confirmada para {self.__cliente.nombre}.")
+        return f"Reserva {self.__codigo} confirmada."
+
+    def cancelar(self, motivo="Sin motivo"):
+        if self.__estado in ("Procesada", "Cancelada"):        # Lo procesado o cancelado ya no se cancela
+            raise EstadoReservaError("cancelar", self.__estado)
+        self.__estado = "Cancelada"
+        logging.warning(f"Reserva {self.__codigo} cancelada. Motivo: {motivo}")
+        return f"Reserva {self.__codigo} cancelada ({motivo})."
+
+    def procesar(self, descuento=0.0, impuesto=0.19):
+        """Cobra la reserva. Usa try/except/else/finally y encadena los errores."""
+        try:
+            if self.__estado != "Confirmada":                  # Hay que confirmar antes de procesar
+                raise EstadoReservaError("procesar", self.__estado)
+            total = self.__servicio.calcular_costo(descuento, impuesto)
+        except CalculoCostoError as error:
+            # El error de cálculo se envuelve en uno de reserva sin perder la causa
+            raise ReservaInvalidaError(f"falló el cálculo del total de {self.__codigo}") from error
+        else:
+            # Solo entra aquí si no hubo ningún error
+            self.__estado = "Procesada"
+            registrar_evento(f"Reserva {self.__codigo} procesada. Total: ${total:,.2f}")
+            return f"Reserva {self.__codigo} procesada. Total a pagar: ${total:,.2f}"
+        finally:
+            # Se ejecuta siempre, haya error o no
+            logging.info(f"Intento de procesar la reserva {self.__codigo} terminado (estado: {self.__estado}).")
+
+
+# =====================================================================
+# SECCIÓN 5. SIMULACIÓN DE OPERACIONES
+# =====================================================================
+
+clientes_registrados = {}          # Diccionario cédula -> Cliente, hace las veces de "base de datos"
+
+
+def registrar_cliente(cedula, nombre, correo):
+    """Crea el cliente y lo guarda, revisando que la cédula no esté repetida."""
+    if str(cedula).strip() in clientes_registrados:
+        raise ClienteDuplicadoError(cedula)
+    cliente = Cliente(cedula, nombre, correo)                  # Si algo está mal, el constructor lanza el error
+    clientes_registrados[cliente.cedula] = cliente
+    registrar_evento(f"Cliente registrado: {cliente.obtener_informacion()}")
+    return cliente
+
+
+def ejecutar_operacion(numero, descripcion, funcion):
+    """Corre una operación sin dejar que el programa se caiga si algo falla."""
+    print(f"\n[Op. {numero}] {descripcion}")
+    try:
+        resultado = funcion()                                  # Se ejecuta la operación
+    except SoftwareFJError as error:                           # Errores que nosotros mismos definimos
+        registrar_error(error)
+        print(f"  -> Error controlado: {error}")
+        if error.__cause__ is not None:                        # Si viene encadenado, mostramos la causa
+            print(f"     Causa: {error.__cause__}")
+        return None
+    except Exception as error:                                 # Cualquier otro fallo que no esperábamos
+        logging.critical(f"Error inesperado en la operación {numero}: {error}")
+        print(f"  -> Error inesperado: {error}")
+        return None
+    else:
+        print(f"  -> OK: {resultado if isinstance(resultado, str) else resultado.obtener_informacion()}")
+        return resultado
+
+
+if __name__ == "__main__":
+    print("--- SISTEMA INTEGRAL SOFTWARE FJ ---")
+    registrar_evento("===== Inicio de la simulación =====")
+
+    # 1. Cliente válido
+    c1 = ejecutar_operacion(1, "Registrar cliente válido",
+                            lambda: registrar_cliente("1090555111", "Carlos Pérez", "carlos@correo.com"))
+
+    # 2. Cliente con correo mal escrito (debe fallar con FJ-102)
+    ejecutar_operacion(2, "Registrar cliente con correo inválido",
+                       lambda: registrar_cliente("1090555222", "María Rodríguez", "maria.correo.com"))
+
+    # 3. Cliente repetido (debe fallar con FJ-201)
+    ejecutar_operacion(3, "Registrar un cliente con cédula repetida",
+                       lambda: registrar_cliente("1090555111", "Carlos Pérez", "otro@correo.com"))
+
+    # 4. Cliente válido (el de la operación 2 ya corregido)
+    c2 = ejecutar_operacion(4, "Registrar cliente válido",
+                            lambda: registrar_cliente("1090555222", "María Rodríguez", "maria@correo.com"))
+
+    # 5. Los tres servicios especializados
+    sala = ejecutar_operacion(5, "Crear servicio Reserva de Sala", lambda: ReservaSala("SR-01", 50000, 3))
+    equipo = AlquilerEquipo("EQ-01", 30000, 4, disponible=False)     # Este equipo está en mantenimiento
+    asesoria = AsesoriaEspecializada("AS-01", 80000, 5)
+    print(f"  -> OK: {equipo.obtener_detalles()} (no disponible)")
+    print(f"  -> OK: {asesoria.obtener_detalles()}")
+
+    # 6. Servicio con datos fuera de rango (debe fallar con FJ-103)
+    ejecutar_operacion(6, "Crear una sala por 20 horas", lambda: ReservaSala("SR-02", 50000, 20))
+
+    # 7. Variantes del cálculo de costo (parámetros opcionales)
+    def variantes_costo():
+        return (f"sin nada ${sala.calcular_costo():,.2f} | "
+                f"10 % desc. ${sala.calcular_costo(10):,.2f} | "
+                f"10 % desc. + IVA ${sala.calcular_costo(descuento=10, impuesto=0.19):,.2f} | "
+                f"asesoría 5 sesiones ${asesoria.calcular_costo():,.2f}")
+    ejecutar_operacion(7, "Calcular costos con distintos parámetros", variantes_costo)
+
+    # 8. Reserva completa: crear, confirmar y procesar
+    reserva1 = Reserva("R-001", c1, sala)
+    ejecutar_operacion(8, "Confirmar y procesar la reserva R-001",
+                       lambda: reserva1.confirmar() + " " + reserva1.procesar(descuento=10))
+
+    # 9. Reserva de un equipo que no está disponible (debe fallar con FJ-301)
+    reserva2 = Reserva("R-002", c2, equipo)
+    ejecutar_operacion(9, "Confirmar reserva de equipo no disponible", reserva2.confirmar)
+
+    # 10. Cancelar una reserva ya procesada (debe fallar con FJ-401)
+    ejecutar_operacion(10, "Cancelar la reserva R-001, que ya fue procesada",
+                       lambda: reserva1.cancelar("El cliente cambió de idea"))
+
+    # 11. Procesar con un descuento imposible (FJ-402 encadenado con FJ-302)
+    reserva3 = Reserva("R-003", c2, asesoria)
+    reserva3.confirmar()
+    ejecutar_operacion(11, "Procesar R-003 con descuento del 150 %",
+                       lambda: reserva3.procesar(descuento=150))
+
+    # 12. Reserva sin cliente (debe fallar con FJ-104)
+    ejecutar_operacion(12, "Crear una reserva sin cliente", lambda: Reserva("R-004", None, sala))
+
+    registrar_evento("===== Fin de la simulación =====")
+    print("\n" + "=" * 50)
+    print("Simulación terminada. El detalle quedó en software_fj.log")
