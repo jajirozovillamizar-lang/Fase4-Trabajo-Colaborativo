@@ -73,24 +73,110 @@ class Cliente(EntidadBase):
     def obtener_informacion(self):
         return f"Cliente: {self.nombre} | Cédula: {self.cedula} | Correo: {self.correo}"
 
-# 3. Clase abstracta Servicio y al menos tres servicios especializados que hereden de ella
+# =====================================================================
+# SECCIÓN 3. CLASE ABSTRACTA SERVICIO Y SUS TRES SERVICIOS ESPECIALIZADOS
+# =====================================================================
 
 class Servicio(EntidadBase):
-    def __init__(self, codigo, nombre_servicio, costo_base):
-        super().__init__(codigo)  
-        self.nombre_servicio = nombre_servicio
-        self.costo_base = costo_base
+    """Clase abstracta para todos los servicios que ofrece Software FJ."""
+
+    def __init__(self, codigo, nombre_servicio, costo_base, cantidad, disponible=True):
+        super().__init__(codigo)                       # El código es el identificador del servicio
+        self.nombre_servicio = nombre_servicio         # Nombre que se muestra al cliente
+        self.costo_base = costo_base                   # Valor por hora, día o sesión
+        self.cantidad = cantidad                       # Horas, días o sesiones según el servicio
+        self.disponible = disponible                   # Si es False no se puede reservar
+        self.validar()                                 # Cada hija aplica sus propias reglas
+
+    # --- Método con parámetros opcionales (así se simula la sobrecarga en Python) ---
+    # Python no permite tener varios métodos con el mismo nombre y distintos parámetros,
+    # entonces usamos valores por defecto: se puede llamar sin nada, solo con descuento,
+    # solo con impuesto o con los dos, y cada forma da un resultado distinto.
+    def calcular_costo(self, descuento=0.0, impuesto=0.0):
+        try:
+            if not 0 <= descuento <= 100:                                  # El descuento va de 0 a 100 %
+                raise ValorFueraDeRangoError("descuento", descuento, 0, 100)
+            if not 0 <= impuesto <= 1:                                     # El impuesto va como fracción, ej. 0.19
+                raise ValorFueraDeRangoError("impuesto", impuesto, 0, 1)
+        except ValorFueraDeRangoError as error:
+            raise CalculoCostoError(f"parámetros inválidos en {self.identificador}") from error  # Encadenamiento
+        subtotal = self.calcular_subtotal()                                # Cada hija calcula distinto (polimorfismo)
+        subtotal -= subtotal * (descuento / 100)                           # Se aplica el descuento
+        return subtotal + subtotal * impuesto                              # Se suma el impuesto
+
+    def validar(self):
+        if not isinstance(self.costo_base, (int, float)) or self.costo_base <= 0:   # Costo positivo
+            raise ValorFueraDeRangoError("costo base", self.costo_base, 1, "sin límite")
+        return True
 
     @abc.abstractmethod
-    def calcular_costo(self):
-        """Obliga a los hijos a programar su propio cálculo de costo"""
-        pass
+    def calcular_subtotal(self):
+        """Cada servicio tiene su propia forma de calcular el valor antes de descuentos."""
 
     @abc.abstractmethod
     def obtener_detalles(self):
-        """Obliga a los hijos a programar su propia descripción"""
-        pass
+        """Cada servicio se describe a su manera."""
 
-    # Solución técnica para que EntidadBase no falle al instanciar los servicios
     def obtener_informacion(self):
-        return self.obtener_detalles()
+        return self.obtener_detalles()                 # Cumple con el método abstracto de EntidadBase
+
+
+class ReservaSala(Servicio):
+    """Reserva de salas por horas. Máximo 12 horas por reserva."""
+
+    def __init__(self, codigo, costo_base, horas, disponible=True):
+        super().__init__(codigo, "Reserva de Sala", costo_base, horas, disponible)
+
+    def validar(self):
+        super().validar()                                                  # Primero las reglas generales
+        if not isinstance(self.cantidad, int) or not 1 <= self.cantidad <= 12:
+            raise ValorFueraDeRangoError("horas", self.cantidad, 1, 12)
+        return True
+
+    def calcular_subtotal(self):
+        return self.costo_base * self.cantidad                             # Valor hora por número de horas
+
+    def obtener_detalles(self):
+        return f"Servicio: {self.nombre_servicio} | Código: {self.identificador} | Horas: {self.cantidad}"
+
+
+class AlquilerEquipo(Servicio):
+    """Alquiler de equipos por días. Lleva un seguro fijo del 5 % por posibles daños."""
+
+    SEGURO = 0.05                                                          # 5 % sobre el valor del alquiler
+
+    def __init__(self, codigo, costo_base, dias, disponible=True):
+        super().__init__(codigo, "Alquiler de Equipo", costo_base, dias, disponible)
+
+    def validar(self):
+        super().validar()
+        if not isinstance(self.cantidad, int) or not 1 <= self.cantidad <= 30:
+            raise ValorFueraDeRangoError("días", self.cantidad, 1, 30)
+        return True
+
+    def calcular_subtotal(self):
+        alquiler = self.costo_base * self.cantidad                         # Valor día por número de días
+        return alquiler + alquiler * self.SEGURO                           # Se le suma el seguro
+
+    def obtener_detalles(self):
+        return f"Servicio: {self.nombre_servicio} | Código: {self.identificador} | Días: {self.cantidad}"
+
+
+class AsesoriaEspecializada(Servicio):
+    """Asesorías por sesiones. Desde 5 sesiones cada sesión sale 10 % más barata."""
+
+    def __init__(self, codigo, costo_base, sesiones, disponible=True):
+        super().__init__(codigo, "Asesoría Especializada", costo_base, sesiones, disponible)
+
+    def validar(self):
+        super().validar()
+        if not isinstance(self.cantidad, int) or not 1 <= self.cantidad <= 20:
+            raise ValorFueraDeRangoError("sesiones", self.cantidad, 1, 20)
+        return True
+
+    def calcular_subtotal(self):
+        valor_sesion = self.costo_base * 0.9 if self.cantidad >= 5 else self.costo_base   # Precio por paquete
+        return valor_sesion * self.cantidad
+
+    def obtener_detalles(self):
+        return f"Servicio: {self.nombre_servicio} | Código: {self.identificador} | Sesiones: {self.cantidad}"
