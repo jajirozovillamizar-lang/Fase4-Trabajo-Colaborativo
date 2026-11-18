@@ -1,3 +1,103 @@
+# Sistema Integral de Gestión de Clientes, Servicios y Reservas - Software FJ
+# Curso Programación 213023 - Fase 4 - Trabajo colaborativo
+# Integrantes: Jassney Jimena Rozo Villamizar, Erica Liceth Mosquera Aranda, César Augusto Osorio Machado
+
+import abc        # Módulo para crear clases abstractas
+import logging    # Módulo para llevar el archivo de logs
+import re         # Expresiones regulares, las usamos para validar el correo
+
+
+# =====================================================================
+# SECCIÓN 1. ARCHIVO DE LOGS Y EXCEPCIONES PERSONALIZADAS
+# =====================================================================
+
+# Configuración del archivo donde quedan guardados todos los eventos y errores
+logging.basicConfig(
+    filename="software_fj.log",                              # Nombre del archivo de logs
+    level=logging.INFO,                                      # Se guarda desde INFO hacia arriba
+    format="%(asctime)s - %(levelname)s - %(message)s",      # Fecha, nivel y mensaje en cada línea
+    encoding="utf-8",                                        # Para que las tildes se guarden bien
+)
+
+
+def registrar_evento(mensaje):
+    """Guarda en el log una operación que salió bien."""
+    logging.info(mensaje)                                    # Nivel INFO para eventos normales
+
+
+def registrar_error(error):
+    """Guarda en el log un error controlado, con su causa si viene encadenado."""
+    texto = f"{type(error).__name__}: {error}"               # Nombre de la excepción y su mensaje
+    if error.__cause__ is not None:                          # Si el error fue encadenado con 'from'
+        texto += f" | Causa original: {type(error.__cause__).__name__}: {error.__cause__}"
+    logging.error(texto)                                     # Nivel ERROR para fallos controlados
+
+
+class SoftwareFJError(Exception):
+    """Excepción base del sistema. Todas las demás heredan de esta."""
+
+    def __init__(self, mensaje, codigo="FJ-000"):
+        super().__init__(mensaje)                            # Guarda el mensaje como cualquier Exception
+        self.codigo = codigo                                 # Código propio para identificar el error
+
+    def __str__(self):
+        return f"[{self.codigo}] {self.args[0]}"             # Muestra el código junto al mensaje
+
+
+# --- Errores de validación de datos ---
+class ValidacionError(SoftwareFJError):
+    """Agrupa los errores de datos mal ingresados."""
+
+
+class DatoVacioError(ValidacionError):
+    def __init__(self, campo):
+        super().__init__(f"El campo '{campo}' no puede estar vacío.", "FJ-101")
+
+
+class FormatoInvalidoError(ValidacionError):
+    def __init__(self, campo, valor):
+        super().__init__(f"El valor '{valor}' no tiene un formato válido para '{campo}'.", "FJ-102")
+
+
+class ValorFueraDeRangoError(ValidacionError):
+    def __init__(self, campo, valor, minimo, maximo):
+        super().__init__(f"'{campo}' = {valor} está fuera del rango permitido ({minimo} a {maximo}).", "FJ-103")
+
+
+class ParametroFaltanteError(ValidacionError):
+    def __init__(self, parametro):
+        super().__init__(f"Falta el parámetro obligatorio '{parametro}'.", "FJ-104")
+
+
+# --- Errores de clientes ---
+class ClienteDuplicadoError(SoftwareFJError):
+    def __init__(self, cedula):
+        super().__init__(f"Ya existe un cliente registrado con la cédula {cedula}.", "FJ-201")
+
+
+# --- Errores de servicios ---
+class ServicioNoDisponibleError(SoftwareFJError):
+    def __init__(self, nombre):
+        super().__init__(f"El servicio '{nombre}' no está disponible en este momento.", "FJ-301")
+
+
+class CalculoCostoError(SoftwareFJError):
+    def __init__(self, detalle):
+        super().__init__(f"No se pudo calcular el costo: {detalle}", "FJ-302")
+
+
+# --- Errores de reservas ---
+class EstadoReservaError(SoftwareFJError):
+    def __init__(self, accion, estado):
+        super().__init__(f"No se puede {accion} una reserva en estado '{estado}'.", "FJ-401")
+
+
+class ReservaInvalidaError(SoftwareFJError):
+    def __init__(self, detalle):
+        super().__init__(f"La reserva no se pudo completar: {detalle}", "FJ-402")
+
+
+# =====================================================================
 # SECCIÓN 2. CLASE ABSTRACTA BASE Y CLASE CLIENTE
 # =====================================================================
 
