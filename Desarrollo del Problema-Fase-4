@@ -1,49 +1,77 @@
-#Desarrollo del Sistema Integral de Gestión de Clientes, Servicios y Reservas
-
-# Empezamos a crear las clases
-
-import abc
-
-
-# 1. Una clase abstracta que represente entidades generales del sistema
+# SECCIÓN 2. CLASE ABSTRACTA BASE Y CLASE CLIENTE
+# =====================================================================
 
 class EntidadBase(abc.ABC):
+    """Clase abstracta que representa cualquier entidad del sistema."""
+
     def __init__(self, identificador):
-        self.identificador = identificador
+        if identificador is None or str(identificador).strip() == "":   # El identificador es obligatorio
+            raise DatoVacioError("identificador")
+        self._identificador = str(identificador).strip()                  # Atributo protegido
+
+    @property
+    def identificador(self):
+        return self._identificador                                        # Solo lectura desde afuera
 
     @abc.abstractmethod
     def obtener_informacion(self):
-        """Método abstracto obligatorio: 
-           Cualquier clase hija debe programar este método a su manera."""
-        pass
+        """Cada clase hija debe programar este método a su manera."""
+
+    @abc.abstractmethod
+    def validar(self):
+        """Cada clase hija revisa que sus propios datos estén correctos."""
 
 
+class Cliente(EntidadBase):
+    """Cliente de Software FJ con sus datos personales encapsulados."""
 
-# 2. clase Cliente con validaciones robustas y encapsulación de datos personales
-class Cliente(EntidadBase):  #hereda de EntidadBase
+    PATRON_CORREO = r"^[\w\.-]+@[\w-]+(\.[\w-]+)+$"     # Forma general de un correo: usuario@dominio.ext
+
     def __init__(self, cedula, nombre, correo):
-        super().__init__(cedula)  
-        # Atributos protegidos (encapsulación) para que no los cambien 
-        self.__nombre = nombre
-        self.__correo = correo
+        super().__init__(cedula)                       # La cédula es el identificador del cliente
+        self.nombre = nombre                           # Pasa por el setter, que valida
+        self.correo = correo                           # Pasa por el setter, que valida
+        self.validar()                                 # Revisión final de la cédula
 
-    # @property sirve para poder LEER los datos de forma segura sin que se dañen
     @property
     def cedula(self):
-        return self.identificador  
+        return self.identificador                      # La cédula se puede leer pero no cambiar
 
     @property
     def nombre(self):
-        return self.__nombre
+        return self.__nombre                           # Lectura del atributo privado
+
+    @nombre.setter
+    def nombre(self, valor):
+        if valor is None or str(valor).strip() == "":                  # No se permite nombre vacío
+            raise DatoVacioError("nombre")
+        valor = str(valor).strip()                                     # Quitamos espacios sobrantes
+        if not all(c.isalpha() or c.isspace() for c in valor):         # Solo letras y espacios
+            raise FormatoInvalidoError("nombre", valor)
+        self.__nombre = valor                                          # Se guarda ya validado
 
     @property
     def correo(self):
-        return self.__correo
+        return self.__correo                           # Lectura del atributo privado
 
-    # Se cumple con la obligación de la clase abstracta
+    @correo.setter
+    def correo(self, valor):
+        if valor is None or str(valor).strip() == "":                  # No se permite correo vacío
+            raise DatoVacioError("correo")
+        valor = str(valor).strip().lower()                             # Se guarda en minúscula
+        if not re.match(self.PATRON_CORREO, valor):                    # Debe tener la forma de un correo
+            raise FormatoInvalidoError("correo", valor)
+        self.__correo = valor
+
+    def validar(self):
+        if not self.cedula.isdigit():                                  # La cédula solo lleva números
+            raise FormatoInvalidoError("cédula", self.cedula)
+        if not 6 <= len(self.cedula) <= 10:                            # Largo normal de una cédula en Colombia
+            raise ValorFueraDeRangoError("dígitos de la cédula", len(self.cedula), 6, 10)
+        return True
+
     def obtener_informacion(self):
-        return f"Cliente: {self.__nombre} | Cédula: {self.identificador} | Correo: {self.__correo}"
-   
+        return f"Cliente: {self.nombre} | Cédula: {self.cedula} | Correo: {self.correo}"
 
 # 3. Clase abstracta Servicio y al menos tres servicios especializados que hereden de ella
 
